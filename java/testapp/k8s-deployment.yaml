@@ -1,0 +1,83 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: testapp-config
+data:
+  JAVA_OPTS: "-Xms256m -Xmx512m"
+  OTEL_SERVICE_NAME: "testapp"
+  OTEL_TRACES_EXPORTER: "otlp"
+  OTEL_METRICS_EXPORTER: "otlp"
+  OTEL_LOGS_EXPORTER: "otlp"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otelcollector-deployment:4317"
+  OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+  # Note: service.instance.id will be set dynamically from pod hostname in deployment
+  OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SERVER_REQUEST: "true"
+  OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SERVER_RESPONSE: "true"
+  OTEL_LOGS_EXPORTER: "none"
+--- 
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: testapp
+  labels:
+    app: testapp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: testapp
+  template:
+    metadata:
+      labels:
+        app: testapp
+    spec:
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      containers:
+      - name: testapp
+        image: us-docker.pkg.dev/chronosphere-global-infra/dev/erikwujavaapp:test
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: testapp-config
+        env:
+        - name: PORT
+          value: "8080"
+        - name: MAX_LATENCY_MS
+          value: "5000"
+        - name: HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: "service.name=testapp,service.namespace=testapp,deployment.environment=kubernetes,service.instance.id=$(HOSTNAME)"
+        - name: OTEL_METRIC_EXPORT_INTERVAL
+          value: "30000"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: testapp-service
+  labels:
+    app: testapp
+spec:
+  type: ClusterIP
+  selector:
+    app: testapp
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+
