@@ -1,19 +1,21 @@
 package com.example.testapp;
 
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpHandler;
-import com.sun.net.httpserver.HttpServer;
+import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.server.Request;
+import org.eclipse.jetty.server.handler.AbstractHandler;
 
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.io.OutputStream;
-import java.net.InetSocketAddress;
+import java.io.PrintWriter;
 import java.util.Random;
-import java.util.concurrent.Executors;
 import java.util.logging.Logger;
 
 /**
- * Simple HTTP server for testing OpenTelemetry instrumentation.
+ * Simple HTTP server using Jetty for testing OpenTelemetry instrumentation.
  * Generates synthetic latency and random HTTP status codes.
+ * Jetty is fully supported by OpenTelemetry Java agent for auto-instrumentation.
  */
 public class TestApp {
     private static final Logger logger = Logger.getLogger(TestApp.class.getName());
@@ -23,68 +25,64 @@ public class TestApp {
     private static final int PORT = Integer.parseInt(System.getenv().getOrDefault("PORT", "8080"));
     private static final int MAX_LATENCY_MS = Integer.parseInt(System.getenv().getOrDefault("MAX_LATENCY_MS", "5000"));
     
-    public static void main(String[] args) throws IOException {
-        logger.info("Starting TestApp HTTP server on port " + PORT);
+    public static void main(String[] args) throws Exception {
+        logger.info("Starting TestApp Jetty server on port " + PORT);
         
-        HttpServer server = HttpServer.create(new InetSocketAddress(PORT), 0);
-        server.createContext("/", new RequestHandler());
-        server.createContext("/health", new HealthHandler());
-        server.setExecutor(Executors.newSingleThreadExecutor());
-        server.start();
-        
-        logger.info("TestApp server started successfully. Ready to accept requests.");
+        Server server = new Server(PORT);
+        server.setHandler(new TestAppHandler());
         
         // Add shutdown hook for graceful termination
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             logger.info("Shutting down TestApp server...");
-            server.stop(5);
-            logger.info("TestApp server stopped.");
-        }));
-    }
-    
-    static class HealthHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            String healthResponse = "{\"status\":\"UP\",\"timestamp\":" + System.currentTimeMillis() + "}";
-            
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, healthResponse.getBytes().length);
-            
-            try (OutputStream os = exchange.getResponseBody()) {
-                os.write(healthResponse.getBytes());
+            try {
+                server.stop();
+                logger.info("TestApp server stopped.");
+            } catch (Exception e) {
+                logger.severe("Error stopping server: " + e.getMessage());
             }
-        }
+        }));
+        
+        server.start();
+        logger.info("TestApp server started successfully. Ready to accept requests.");
+        server.join();
     }
     
-    static class RequestHandler implements HttpHandler {
+    static class TestAppHandler extends AbstractHandler {
         @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            String method = exchange.getRequestMethod();
-            String path = exchange.getRequestURI().getPath();
-            String remoteAddress = exchange.getRemoteAddress().getAddress().getHostAddress();
+        public void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) 
+                throws IOException, ServletException {
+            
+            String method = request.getMethod();
+            String path = request.getRequestURI();
+            String remoteAddress = request.getRemoteAddr();
             
             logger.info(String.format("Received %s request to %s from %s", method, path, remoteAddress));
             
+            // Mark request as handled
+            baseRequest.setHandled(true);
+            
             try {
-                // Skip synthetic latency for health endpoint
-                int latencyMs = 0;
-                if (!path.equals("/health")) {
-                    // Add synthetic latency (0-5 seconds by default)
-                    latencyMs = random.nextInt(MAX_LATENCY_MS + 1);
-                    logger.info("Adding synthetic latency: " + latencyMs + "ms");
-                    Thread.sleep(latencyMs);
+                // Handle health endpoint without latency
+                if ("/health".equals(path)) {
+                    handleHealth(response);
+                    return;
                 }
+                
+                // Add synthetic latency (0-5 seconds by default)
+                int latencyMs = random.nextInt(MAX_LATENCY_MS + 1);
+                logger.info("Adding synthetic latency: " + latencyMs + "ms");
+                Thread.sleep(latencyMs);
                 
                 // Generate random status code
                 int statusCode = generateRandomStatusCode();
                 String responseBody = generateResponseBody(statusCode, method, path, latencyMs);
                 
                 // Send response
-                exchange.getResponseHeaders().set("Content-Type", "application/json");
-                exchange.sendResponseHeaders(statusCode, responseBody.getBytes().length);
+                response.setContentType("application/json");
+                response.setStatus(statusCode);
                 
-                try (OutputStream os = exchange.getResponseBody()) {
-                    os.write(responseBody.getBytes());
+                try (PrintWriter out = response.getWriter()) {
+                    out.println(responseBody);
                 }
                 
                 logger.info(String.format("Responded with status %d after %dms latency", statusCode, latencyMs));
@@ -92,22 +90,34 @@ public class TestApp {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 logger.warning("Request handling interrupted");
-                
-                // Send 503 Service Unavailable
-                String errorResponse = "{\"error\":\"Service interrupted\",\"status\":503}";
-                exchange.sendResponseHeaders(503, errorResponse.getBytes().length);
-                try (OutputStream os = exchange.getResponseBody()) {
-                    os.write(errorResponse.getBytes());
-                }
+                sendErrorResponse(response, 503, "Service interrupted");
             } catch (Exception e) {
                 logger.severe("Error handling request: " + e.getMessage());
-                
-                // Send 500 Internal Server Error
-                String errorResponse = "{\"error\":\"Internal server error\",\"status\":500}";
-                exchange.sendResponseHeaders(500, errorResponse.getBytes().length);
-                try (OutputStream os = exchange.getResponseBody()) {
-                    os.write(errorResponse.getBytes());
-                }
+                sendErrorResponse(response, 500, "Internal server error");
+            }
+        }
+        
+        private void handleHealth(HttpServletResponse response) throws IOException {
+            String healthResponse = "{\"status\":\"UP\",\"timestamp\":" + System.currentTimeMillis() + "}";
+            
+            response.setContentType("application/json");
+            response.setStatus(200);
+            
+            try (PrintWriter out = response.getWriter()) {
+                out.println(healthResponse);
+            }
+            
+            logger.info("Health check responded with status 200");
+        }
+        
+        private void sendErrorResponse(HttpServletResponse response, int status, String message) throws IOException {
+            String errorResponse = String.format("{\"error\":\"%s\",\"status\":%d}", message, status);
+            
+            response.setContentType("application/json");
+            response.setStatus(status);
+            
+            try (PrintWriter out = response.getWriter()) {
+                out.println(errorResponse);
             }
         }
         
@@ -142,7 +152,7 @@ public class TestApp {
             long timestamp = System.currentTimeMillis();
             
             return String.format(
-                "{\"status\":%d,\"message\": \"%s\",\"method\":\"%s\",\"path\":\"%s\",\"latency_ms\":%d,\"timestamp\":%d}",
+                "{\"status\":%d,\"message\":\"%s\",\"method\":\"%s\",\"path\":\"%s\",\"latency_ms\":%d,\"timestamp\":%d}",
                 statusCode, status, method, path, latencyMs, timestamp
             );
         }

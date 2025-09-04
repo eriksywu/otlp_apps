@@ -57,6 +57,8 @@ spec:
           value: "service.name=testapp,service.namespace=testapp,deployment.environment=kubernetes,service.instance.id=$(HOSTNAME)"
         - name: OTEL_METRIC_EXPORT_INTERVAL
           value: "30000"
+        - name: OTEL_INSTRUMENTATION_HTTP_SERVER_EMIT_EXPERIMENTAL_METRICS
+          value: "true"
         resources:
           requests:
             memory: "512Mi"

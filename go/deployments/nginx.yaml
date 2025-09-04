@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-test-deployment
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9113"
+    prometheus.io/scheme: http
+  labels:
+    app: nginx-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-test
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9113"
+        prometheus.io/scheme: httpq
+      labels:
+        app: nginx-test
+    spec:
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      containers:
+        - name: nginx-prom-exporter
+          image: nginx/nginx-prometheus-exporter:latest
+          #image: us-docker.pkg.dev/chronosphere-global-infra/dev/erikwupromexporter:amd64
+          imagePullPolicy: Always
+          args:
+            - '--nginx.scrape-uri=http://localhost:80/stub_status'
+          env:
+            - name: ENABLE_OPEN_METRICS
+              value: "true"
+            - name: ENABLE_OPEN_METRICS_TEXT_CREATED_SAMPLES
+              value: "true"
+          ports:
+            - containerPort: 9113
+        - name: nginx
+          image: nginx:latest
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/
+
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: nginx-config
+            items:
+              - key: nginx.conf
+                path: nginx.conf
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-test-service
+spec:
+  selector:
+    app: nginx-test
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP
+    - name: metrics
+      port: 9113
+      targetPort: 9113
+      protocol: TCP
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+data:
+  nginx.conf: |-
+    events {
+        worker_connections 1024;
+    }
+    http {
+        server {
+            listen 80;
+            server_name _;
+
+            location / {
+                root /usr/share/nginx/html;
+                index index.html index.htm;
+            }
+
+            location /stub_status {
+               stub_status on;
+               access_log off;
+               # Restrict access and only allow access from specific IPs
+               allow 127.0.0.1;
+               deny all;
+            } 
+        }
+    }
+
+

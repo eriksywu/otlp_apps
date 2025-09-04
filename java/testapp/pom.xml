@@ -21,8 +21,23 @@
     </properties>
 
     <dependencies>
-        <!-- No external dependencies - using only JDK built-in classes -->
-        <!-- HttpServer is available in JDK since Java 6 -->
+        <!-- Jetty HTTP Server - fully supported by OpenTelemetry Java agent -->
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-server</artifactId>
+            <version>11.0.18</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-servlet</artifactId>
+            <version>11.0.18</version>
+        </dependency>
+        <!-- Jakarta Servlet API required by Jetty 11 -->
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <version>5.0.0</version>
+        </dependency>
     </dependencies>
 
     <build>

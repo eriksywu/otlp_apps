@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: erikwutest-deployment
+  labels:
+    app: erikwutest
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/scheme: http
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: erikwutest
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/scheme: http
+      labels:
+        app: erikwutest
+    spec:
+      containers:
+        - name: erikwutest
+          image: us-docker.pkg.dev/chronosphere-global-infra/dev/erikwutest:ctwithotel
+          imagePullPolicy: Always
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+          env:
+            - name: ENABLE_OPEN_METRICS
+              value: "true"
+            - name: ENABLE_OPEN_METRICS_TEXT_CREATED_SAMPLES
+              value: "true"
+            - name: OTLP_ENDPOINT
+              value: "otelcollector-deployment:4317"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          ports:
+            - containerPort: 8080
+              name: metrics
+              protocol: TCP
+            - containerPort: 80
+              name: http
+              protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: erikwutest-service
+  labels:
+    app: erikwutest
+spec:
+  selector:
+    app: erikwutest
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP
