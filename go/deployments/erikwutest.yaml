@@ -24,7 +24,7 @@ spec:
     spec:
       containers:
         - name: erikwutest
-          image: us-docker.pkg.dev/chronosphere-global-infra/dev/erikwutest:ctwithotel
+          image: us-docker.pkg.dev/chronosphere-global-infra/dev/erikwugoapp:test
           imagePullPolicy: Always
           resources:
             requests:

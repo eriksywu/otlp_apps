@@ -23,112 +23,27 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 )
 
-const lazyCounterName = "erik_lazy_init_counter_total"
-
 var (
-	// Lazy init counter and mutex
-	erikLazyInitCounter             prometheus.Counter
-	erikLazyInitCounterLabelsSource = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "erik_delayed_counters_total",
-		},
-		[]string{"startIndex"},
-	)
-	lazyCounterMutex          sync.Mutex
-	processBoundCounterSource = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "erik_process_bound_counter_total",
-		ConstLabels: prometheus.Labels{
-			"foo": "foo",
-			"bar": "bar",
-		},
-	})
-
-	// OTLP metrics
-	otlpRequestCounter   metric.Int64Counter
+	// OTLP metric
 	otlpPathIncrementSum metric.Int64Counter
+	// Prometheus metric
+	promPathIncrementSum *prometheus.CounterVec
+)
+
+const (
+	otlpSumCounterName = "erik_otlp_path_increment_sum"
+	promCounterName    = "erik_prom_path_increment_sum"
 )
 
 func init() {
-	prometheus.MustRegister(processBoundCounterSource)
-	prometheus.MustRegister(erikLazyInitCounterLabelsSource)
-}
-
-func updateMetrics() {
-	// Simulate metric updates
-	go func() {
-		for {
-			// Update counters (always increasing)
-			processBoundCounterSource.Inc()
-
-			time.Sleep(1 * time.Second)
-		}
-	}()
-}
-
-func hitNginxService() {
-	go func() {
-		client := &http.Client{
-			Timeout: 5 * time.Second,
-		}
-
-		for {
-			resp, err := client.Get("http://nginx-test-service:80")
-			if err != nil {
-				log.Printf("Error hitting nginx service: %v", err)
-			} else {
-				resp.Body.Close()
-			}
-			time.Sleep(time.Second)
-		}
-	}()
-}
-
-func lazyInitCounter() {
-	go func() {
-		for {
-			time.Sleep(5 * time.Minute)
-			lazyCounterMutex.Lock()
-
-			if erikLazyInitCounter != nil {
-				prometheus.Unregister(erikLazyInitCounter)
-			}
-
-			erikLazyInitCounter = prometheus.NewCounter(prometheus.CounterOpts{
-				Name: lazyCounterName,
-			})
-			prometheus.MustRegister(erikLazyInitCounter)
-			lazyCounterMutex.Unlock()
-		}
-	}()
-}
-
-func incrementLazyCounter() {
-	go func() {
-		for {
-			time.Sleep(100 * time.Millisecond)
-
-			lazyCounterMutex.Lock()
-			if erikLazyInitCounter != nil {
-				erikLazyInitCounter.Inc()
-			} else {
-				log.Println("erik_lazy_init_counter not initialized yet")
-			}
-			lazyCounterMutex.Unlock()
-		}
-	}()
-}
-
-// start up 10 metric processes each delayed by 1min
-func incrementCounterVec() {
-	for i := 0; i < 10; i++ {
-		go func(idx int) {
-			<-time.After(time.Duration(idx) * time.Minute)
-			for {
-				time.Sleep(100 * time.Millisecond)
-				erikLazyInitCounterLabelsSource.WithLabelValues(strconv.Itoa(idx)).Inc()
-			}
-		}(i)
-	}
+	promPathIncrementSum = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: promCounterName,
+			Help: "Running sum of incrementBy values by path",
+		},
+		[]string{"path"},
+	)
+	prometheus.MustRegister(promPathIncrementSum)
 }
 
 func initOTLPMetrics(ctx context.Context) error {
@@ -170,16 +85,8 @@ func initOTLPMetrics(ctx context.Context) error {
 
 	meter := otel.Meter("erik-test-metrics")
 
-	otlpRequestCounter, err = meter.Int64Counter(
-		"erik_otlp_requests_total",
-		metric.WithDescription("Total number of requests processed"),
-	)
-	if err != nil {
-		return err
-	}
-
 	otlpPathIncrementSum, err = meter.Int64Counter(
-		"erik_otlp_path_increment_sum",
+		otlpSumCounterName,
 		metric.WithDescription("Running sum of incrementBy values by path"),
 	)
 
@@ -189,16 +96,6 @@ func initOTLPMetrics(ctx context.Context) error {
 
 	log.Printf("OTLP metrics initialized, sending to endpoint: %s", otlpEndpoint)
 	return nil
-}
-
-func updateOTLPMetrics(ctx context.Context) {
-	go func() {
-		for {
-			otlpRequestCounter.Add(ctx, 1, metric.WithAttributes())
-
-			time.Sleep(2 * time.Second)
-		}
-	}()
 }
 
 type IncrementRequest struct {
@@ -231,6 +128,10 @@ func (w *intervalWorker) start() {
 				metric.WithAttributes(
 					attribute.String("path", w.path),
 				))
+		}
+		// Update Prometheus counter with path label
+		if promPathIncrementSum != nil {
+			promPathIncrementSum.WithLabelValues(w.path).Add(float64(w.incBy))
 		}
 		select {
 		case <-ticker.C:
@@ -283,6 +184,10 @@ func handleIncrement(w http.ResponseWriter, r *http.Request) {
 				attribute.String("path", r.URL.Path),
 			))
 	}
+	// Update Prometheus counter with path label
+	if promPathIncrementSum != nil {
+		promPathIncrementSum.WithLabelValues(r.URL.Path).Add(float64(req.IncrementBy))
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if !exists && req.IncrementByPeriodic == 0 && req.IncrementIntervalSeconds == 0 {
@@ -309,26 +214,10 @@ func main() {
 	ctx := context.Background()
 
 	// Initialize OTLP metrics
-	if err := initOTLPMetrics(ctx); err != nil {
-		log.Printf("Failed to initialize OTLP metrics: %v", err)
-	} else {
-		// Start updating OTLP metrics
-		updateOTLPMetrics(ctx)
+	err := initOTLPMetrics(ctx)
+	if err != nil {
+		panic(err)
 	}
-
-	// Start updating metrics in background
-	updateMetrics()
-
-	// Start hitting nginx service
-	hitNginxService()
-
-	// Start lazy counter initialization
-	lazyInitCounter()
-
-	// Start incrementing lazy counter
-	incrementLazyCounter()
-
-	incrementCounterVec()
 
 	// Set up HTTP server with metrics endpoint
 	// Configure OpenMetrics options based on environment variables
