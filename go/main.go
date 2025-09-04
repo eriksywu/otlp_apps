@@ -83,7 +83,7 @@ func initOTLPMetrics(ctx context.Context) error {
 
 	otel.SetMeterProvider(meterProvider)
 
-	meter := otel.Meter("erik-test-metrics")
+	meter := otel.Meter("")
 
 	otlpPathIncrementSum, err = meter.Int64Counter(
 		otlpSumCounterName,
