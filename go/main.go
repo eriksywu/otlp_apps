@@ -46,6 +46,8 @@ func init() {
 	prometheus.MustRegister(promPathIncrementSum)
 }
 
+const scopeName = "erik-wu-test-scope"
+
 func initOTLPMetrics(ctx context.Context) error {
 	otlpEndpoint := os.Getenv("OTLP_ENDPOINT")
 	if otlpEndpoint == "" {
@@ -83,7 +85,10 @@ func initOTLPMetrics(ctx context.Context) error {
 
 	otel.SetMeterProvider(meterProvider)
 
-	meter := otel.Meter("")
+	meter := meterProvider.Meter(
+		scopeName,
+		metric.WithInstrumentationVersion("v1.0.0"),
+	)
 
 	otlpPathIncrementSum, err = meter.Int64Counter(
 		otlpSumCounterName,
