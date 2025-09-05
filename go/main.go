@@ -20,6 +20,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
+	sdkresource "go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 )
 
@@ -77,9 +78,16 @@ func initOTLPMetrics(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	sdkRes, err := sdkresource.Merge(
+		sdkresource.Default(),
+		res,
+	)
+	if err != nil {
+		return err
+	}
 
 	meterProvider := sdkmetric.NewMeterProvider(
-		sdkmetric.WithResource(res),
+		sdkmetric.WithResource(sdkRes),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(10*time.Second))),
 	)
 
