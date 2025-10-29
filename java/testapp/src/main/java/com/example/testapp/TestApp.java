@@ -19,6 +19,8 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.Metrics;
+import io.micrometer.core.instrument.Tag;
+import io.micrometer.core.instrument.Tags;
 import io.micrometer.registry.otlp.OtlpConfig;
 import io.micrometer.registry.otlp.OtlpMeterRegistry;
 
@@ -68,8 +70,8 @@ public class TestApp {
 
     private static void initializeMicrometer() {
         try {
-            // Get OTLP endpoint from environment variable (same as OpenTelemetry agent)
-            String otlpEndpoint = System.getenv().getOrDefault("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317");
+            // Get HTTP OTLP endpoint for Micrometer (separate from gRPC endpoint used by agent)
+            String httpOtlpEndpoint = System.getenv().getOrDefault("OTEL_EXPORTER_OTLP_HTTP_ENDPOINT", "http://localhost:4318");
 
             // Create OTLP configuration
             OtlpConfig otlpConfig = new OtlpConfig() {
@@ -80,7 +82,8 @@ public class TestApp {
 
                 @Override
                 public String url() {
-                    return otlpEndpoint + "/v1/metrics";
+                    // Use HTTP endpoint for Micrometer OTLP registry
+                    return httpOtlpEndpoint + "/v1/metrics";
                 }
 
                 @Override
@@ -91,6 +94,15 @@ public class TestApp {
 
             // Create and register OTLP meter registry
             meterRegistry = new OtlpMeterRegistry(otlpConfig, io.micrometer.core.instrument.Clock.SYSTEM);
+
+            // Add common tags including service.instance.id
+            Tags commonTags = Tags.of(
+                "service.instance.id", "javatestapp",
+                "service.name", "testapp",
+                "service.version", "1.0.0"
+            );
+            meterRegistry.config().commonTags(commonTags);
+
             Metrics.addRegistry(meterRegistry);
 
             // Initialize custom metrics
@@ -111,7 +123,7 @@ public class TestApp {
                     .description("JVM memory usage in bytes")
                     .register(meterRegistry);
 
-            logger.info("Micrometer OTLP registry initialized with endpoint: " + otlpEndpoint);
+            logger.info("Micrometer OTLP registry initialized with HTTP endpoint: " + httpOtlpEndpoint + "/v1/metrics");
 
         } catch (Exception e) {
             logger.severe("Failed to initialize Micrometer: " + e.getMessage());

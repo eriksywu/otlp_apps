@@ -32,8 +32,8 @@ var (
 )
 
 const (
-	otlpSumCounterName = "erik_otlp_path_increment_sum"
-	promCounterName    = "erik_prom_path_increment_sum"
+	otlpSumCounterName = "erik_otlp_path_increment_count"
+	promCounterName    = "erik_prom_path_increment_count_total"
 )
 
 func init() {
@@ -223,6 +223,26 @@ func handleIncrement(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
+func handleForceRestart(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Received force restart request from %s", r.RemoteAddr)
+
+	// Send response before shutting down
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Process shutting down for restart\n"))
+
+	// Flush response
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+
+	// Give a small delay to ensure response is sent
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		log.Println("Forcing process restart by exiting...")
+		os.Exit(0)
+	}()
+}
+
 func main() {
 	ctx := context.Background()
 
@@ -256,6 +276,10 @@ func main() {
 			EnableOpenMetricsTextCreatedSamples: enableOpenMetricsTextCreatedSamples,
 		}),
 	))
+
+	// Add force restart handler
+	http.HandleFunc("/forcerestart", handleForceRestart)
+
 	// Add HTTP POST handler for any path on port 80
 	handler := otelhttp.NewHandler(&dummyHandler{}, "test")
 	http.Handle("/", handler)

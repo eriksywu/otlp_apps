@@ -1,0 +1,72 @@
+# Prometheus scrape configuration for the Python metrics app
+# This can be added to your Prometheus configuration file
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Scrape configuration for Python metrics app
+  - job_name: 'python-metrics-app'
+
+    # Use OpenMetrics text format 1.0.0 for scraping
+    # This configures the Accept header to prefer OpenMetrics format
+    scrape_protocols:
+    - OpenMetricsText1.0.0
+    - OpenMetricsText0.0.1
+    - PrometheusProto
+    - PrometheusText0.0.4
+
+    # Option 1: Static configuration (for testing or when Service has a fixed IP)
+    static_configs:
+    - targets: ['python-metrics-app:8001']
+      labels:
+        app: 'python-metrics-app'
+        environment: 'production'
+
+    # Drop any labels that start with k8s_
+    metric_relabel_configs:
+    - regex: 'k8s_.*'
+      action: labeldrop
+
+    # Option 2: Kubernetes service discovery (recommended for Kubernetes deployments)
+    # Uncomment the following section if using Prometheus in Kubernetes
+    #
+    # # Use OpenMetrics text format 1.0.0 for scraping
+    # scrape_protocols:
+    # - OpenMetricsText1.0.0
+    # - OpenMetricsText0.0.1
+    # - PrometheusProto
+    # - PrometheusText0.0.4
+    #
+    # kubernetes_sd_configs:
+    # - role: pod
+    #   namespaces:
+    #     names:
+    #     - default  # Change to your namespace
+    # relabel_configs:
+    # - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+    #   action: keep
+    #   regex: true
+    # - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+    #   action: replace
+    #   target_label: __metrics_path__
+    #   regex: (.+)
+    # - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+    #   action: replace
+    #   regex: ([^:]+)(?::\d+)?;(\d+)
+    #   replacement: $1:$2
+    #   target_label: __address__
+    # - action: labelmap
+    #   regex: __meta_kubernetes_pod_label_(.+)
+    # - source_labels: [__meta_kubernetes_namespace]
+    #   action: replace
+    #   target_label: kubernetes_namespace
+    # - source_labels: [__meta_kubernetes_pod_name]
+    #   action: replace
+    #   target_label: kubernetes_pod_name
+    #
+    # # Drop any labels that start with k8s_ after relabeling
+    # metric_relabel_configs:
+    # - regex: 'k8s_.*'
+    #   action: labeldrop

@@ -10,6 +10,7 @@ data:
   OTEL_LOGS_EXPORTER: "otlp"
   OTEL_EXPORTER_OTLP_ENDPOINT: "http://otelcollector-deployment:4317"
   OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+  OTEL_EXPORTER_OTLP_HTTP_ENDPOINT: "http://otelcollector-deployment:4318"
   # Note: service.instance.id will be set dynamically from pod hostname in deployment
   OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SERVER_REQUEST: "true"
   OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SERVER_RESPONSE: "true"

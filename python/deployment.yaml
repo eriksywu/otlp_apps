@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: erikwu-python-test
+  labels:
+    app: erikwu-python-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: erikwu-python-test
+  template:
+    metadata:
+      labels:
+        app: erikwu-python-test
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8001"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: erikwu-python-test
+        image: us-docker.pkg.dev/chronosphere-global-infra/dev/erikwupythonapp:test
+        #image: subvocal/python-counter:latest
+        imagePullPolicy: Always
+        ports:
+        - name: metrics
+          containerPort: 8001
+          protocol: TCP
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: erikwu-python-test
+  labels:
+    app: erikwu-python-test
+spec:
+  type: ClusterIP
+  ports:
+  - name: metrics
+    port: 8001
+    targetPort: 8001
+    protocol: TCP
+  selector:
+    app: erikwu-python-test

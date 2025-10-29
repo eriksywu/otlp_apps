@@ -36,8 +36,8 @@ spec:
           env:
             - name: ENABLE_OPEN_METRICS
               value: "true"
-            - name: ENABLE_OPEN_METRICS_TEXT_CREATED_SAMPLES
-              value: "true"
+            #- name: ENABLE_OPEN_METRICS_TEXT_CREATED_SAMPLES
+            #  value: "true"
             - name: OTLP_ENDPOINT
               value: "otelcollector-deployment:4317"
             - name: POD_NAME
